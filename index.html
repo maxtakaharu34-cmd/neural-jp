@@ -1,0 +1,113 @@
+<!doctype html>
+<html lang="ja">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover,user-scalable=no" />
+<meta name="theme-color" content="#1e3a8a" />
+<title>瞬間記憶ゲーム</title>
+<link href="https://fonts.googleapis.com/css2?family=Mochiy+Pop+P+One&display=swap" rel="stylesheet"/>
+<style>
+*{box-sizing:border-box}html,body{margin:0;padding:0;height:100%;overflow:hidden}
+body{font-family:system-ui,sans-serif;color:#fff;background:linear-gradient(180deg,#1e3a8a,#0a1530);touch-action:manipulation;user-select:none;-webkit-tap-highlight-color:transparent}
+#app{position:fixed;inset:0;display:flex;flex-direction:column;align-items:center;padding:14px;gap:10px}
+.title{font-family:"Mochiy Pop P One",sans-serif;font-size:22px;color:#fbbf24;-webkit-text-stroke:2.5px #000;paint-order:stroke fill;margin:6px 0}
+.hud{display:flex;gap:10px;font-size:13px;font-weight:bold}
+.hud .box{background:rgba(255,255,255,.12);border:2px solid #fbbf24;padding:5px 12px;border-radius:999px}
+.grid{flex:1;display:grid;grid-template-columns:repeat(3,1fr);gap:10px;width:100%;max-width:380px;align-content:center}
+.cell{aspect-ratio:1;background:rgba(255,255,255,.08);border:3px solid #5fc4ff;border-radius:14px;font-family:"Mochiy Pop P One",sans-serif;font-size:48px;display:flex;align-items:center;justify-content:center;cursor:pointer;color:#fbbf24}
+.cell.show{background:#fbbf24;color:#000;animation:flash .4s}
+@keyframes flash{from{transform:scale(1.1)}to{transform:scale(1)}}
+.cell.input{border-color:#fbbf24}
+.cell.correct{background:#10b981;color:#fff;border-color:#10b981}
+.cell.wrong{background:#ef4444;color:#fff;border-color:#ef4444;animation:wrong .3s}
+@keyframes wrong{0%,100%{transform:translateX(0)}25%{transform:translateX(-8px)}75%{transform:translateX(8px)}}
+.actions{display:flex;gap:10px}
+.actions button{background:#5fc4ff;color:#000;border:3px solid #000;padding:12px 24px;font-family:"Mochiy Pop P One",sans-serif;font-size:14px;border-radius:999px;cursor:pointer;box-shadow:3px 3px 0 #000}
+.actions button:active{transform:translate(2px,2px);box-shadow:1px 1px 0 #000}
+.msg{font-size:13px;text-align:center;min-height:24px;font-weight:bold}
+</style>
+</head>
+<body>
+<div id="app">
+<h1 class="title">瞬間記憶 🧠</h1>
+<div class="hud">
+  <div class="box">Lv: <span id="lv">1</span></div>
+  <div class="box">Best: <span id="best">0</span></div>
+  <div class="box">Score: <span id="sc">0</span></div>
+</div>
+<div class="grid" id="grid"></div>
+<div class="msg" id="msg">▶ スタートで開始</div>
+<div class="actions">
+  <button id="btn-go">▶ スタート</button>
+</div>
+</div>
+<script>
+(()=>{
+'use strict';
+const KEY='neural_jp_best';
+const $=(id)=>document.getElementById(id);
+const grid=$('grid');
+let level=1,score=0,best=parseInt(localStorage.getItem(KEY)||'0',10);
+let sequence=[],playerInput=[],phase='idle';
+function buildGrid(){
+  while(grid.firstChild)grid.removeChild(grid.firstChild);
+  for(let i=0;i<9;i++){
+    const c=document.createElement('div');c.className='cell';c.dataset.i=i;
+    c.addEventListener('click',()=>tap(i,c));
+    grid.appendChild(c);
+  }
+}
+function tap(i,c){
+  if(phase!=='input')return;
+  const expected=sequence[playerInput.length];
+  if(i===expected){
+    c.classList.add('correct');beep(880,.06);
+    setTimeout(()=>c.classList.remove('correct'),200);
+    playerInput.push(i);
+    if(playerInput.length===sequence.length){
+      // round complete
+      score+=level*10;$('sc').textContent=score;
+      level++;$('lv').textContent=level;
+      if(level-1>best){best=level-1;localStorage.setItem(KEY,String(best));$('best').textContent=best}
+      $('msg').textContent='✓ 正解！次のレベル';
+      setTimeout(playSequence,800);
+    }
+  }else{
+    c.classList.add('wrong');beep(150,.3,'sawtooth');
+    sad();
+    $('msg').textContent='✗ 失敗… レベル'+level;
+    phase='idle';$('btn-go').textContent='▶ もう一度';
+    setTimeout(()=>document.querySelectorAll('.cell').forEach(x=>x.className='cell'),800);
+  }
+}
+function playSequence(){
+  // generate one new step
+  if(sequence.length<level){sequence.push(Math.floor(Math.random()*9))}
+  phase='show';playerInput=[];$('msg').textContent='👀 順番を覚えて...';
+  document.querySelectorAll('.cell').forEach(c=>c.className='cell');
+  let i=0;
+  const interval=setInterval(()=>{
+    if(i>=sequence.length){
+      clearInterval(interval);phase='input';$('msg').textContent='指でタップ！';return;
+    }
+    const c=document.querySelector(`.cell[data-i="${sequence[i]}"]`);
+    c.classList.add('show');beep(440+sequence[i]*60,.18);
+    setTimeout(()=>c.classList.remove('show'),500);
+    i++;
+  },650);
+}
+function start(){
+  level=1;score=0;sequence=[];$('lv').textContent=1;$('sc').textContent=0;
+  $('btn-go').textContent='プレイ中';
+  setTimeout(playSequence,300);
+}
+let ac=null;const en=()=>{if(!ac)ac=new(window.AudioContext||window.webkitAudioContext)();if(ac.state==='suspended')ac.resume();return ac};
+const beep=(f,d,t='triangle',g=.1)=>{const a=en();const o=a.createOscillator();const gn=a.createGain();o.type=t;o.frequency.value=f;gn.gain.value=g;gn.gain.exponentialRampToValueAtTime(.0001,a.currentTime+d);o.connect(gn).connect(a.destination);o.start();o.stop(a.currentTime+d)};
+const sad=()=>{[440,330,220].forEach((f,i)=>setTimeout(()=>beep(f,.18,'sawtooth'),i*120))};
+$('btn-go').addEventListener('click',()=>{en();start()});
+$('best').textContent=best;
+buildGrid();
+})();
+</script>
+</body>
+</html>
